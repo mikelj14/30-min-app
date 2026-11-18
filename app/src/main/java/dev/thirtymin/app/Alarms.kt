@@ -83,11 +83,21 @@ fun Intent.schedule(): Schedule? = runCatching {
     )
 }.getOrNull()
 
+/**
+ * One receiver for our own alarms and for the system events that wipe or
+ * shift them (reboot, app update, clock/zone change, permission granted).
+ * Every path is idempotent: scheduleDaily replaces the one daily alarm
+ * (same PendingIntent identity), and arming re-derives phase() from disk,
+ * so repeats, or events during a running block, change nothing.
+ */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        // Re-arm tomorrow first, so a failure below cannot skip future days.
-        if (intent.action == Alarms.ACTION_DAILY) Alarms.scheduleDaily(context)
-        val schedule = intent.schedule() ?: return
+        val reschedule = intent.action in RESCHEDULE_ACTIONS
+        // Re-arm the next daily alarm first, so a failure below cannot skip
+        // future days. Re-checks the exact alarm permission each time.
+        if (intent.action == Alarms.ACTION_DAILY || reschedule) Alarms.scheduleDaily(context)
+        // System events carry no schedule; they stand for the daily one.
+        val schedule = if (reschedule) Alarms.DAILY else intent.schedule() ?: return
 
         // Stale (delivered after window end) or already blocked today: stay quiet.
         val store = SessionStore(context)
@@ -99,12 +109,15 @@ class AlarmReceiver : BroadcastReceiver() {
                 store.lastStart,
                 store.activeUntil
             )
+        // ACTIVE (block running: never restart or interrupt it), DONE, IDLE: stop here.
         if (p != Phase.ARMED) {
-            Log.i("AlarmReceiver", "ignored, phase=$p")
+            Log.i(TAG, "${intent.action}: ignored, phase=$p")
             return
         }
+        Log.i(TAG, "${intent.action}: arming")
         try {
-            // Allowed from background only because an exact alarm just fired.
+            // Background FGS start is allowed right after an exact alarm and
+            // after each RESCHEDULE_ACTIONS broadcast (documented exemptions).
             context.startForegroundService(
                 Intent(context, BlockerService::class.java)
                     .setAction(BlockerService.ACTION_ARM)
@@ -112,7 +125,19 @@ class AlarmReceiver : BroadcastReceiver() {
             )
         } catch (e: IllegalStateException) {
             // ForegroundServiceStartNotAllowedException: fail open, no block today.
-            Log.w("AlarmReceiver", "could not arm", e)
+            Log.w(TAG, "could not arm", e)
         }
+    }
+
+    private companion object {
+        const val TAG = "AlarmReceiver"
+        val RESCHEDULE_ACTIONS =
+            setOf(
+                Intent.ACTION_BOOT_COMPLETED, // alarms are wiped by reboot
+                Intent.ACTION_MY_PACKAGE_REPLACED, // app updated
+                Intent.ACTION_TIMEZONE_CHANGED, // RTC alarm is an absolute instant: 06:00 moved
+                Intent.ACTION_TIME_CHANGED, // "android.intent.action.TIME_SET": clock set by hand
+                AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED // granted
+            )
     }
 }
