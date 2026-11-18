@@ -1,0 +1,8 @@
+{
+  "name": "30-min-android",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "ubuntu",
+  // Named volume keeps Gradle downloads between container rebuilds.
+  "mounts": ["source=thirtymin-gradle,target=/home/ubuntu/.gradle,type=volume"],
+  "postCreateCommand": "./gradlew --version"
+}
