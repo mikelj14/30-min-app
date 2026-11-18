@@ -17,6 +17,10 @@ concurrency:
 jobs:
   secrets-scan:
     runs-on: ubuntu-latest
+    # On PRs gitleaks lists the PR's commits via the API (403 without this).
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       # Actions pinned by commit SHA; the comment shows the human version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
