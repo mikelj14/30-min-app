@@ -17,3 +17,6 @@ play-service-account.json
 
 # OS
 .DS_Store
+
+# JVM crash heap dumps
+*.hprof
