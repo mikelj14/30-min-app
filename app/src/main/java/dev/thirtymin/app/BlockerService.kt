@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.CountDownTimer
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -18,6 +19,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.time.LocalDate
 
 /**
  * Foreground service that covers the screen with a countdown overlay and
@@ -40,6 +42,10 @@ class BlockerService : Service() {
         val minutes = intent?.getIntExtra(EXTRA_MINUTES, 1) ?: 1
         try {
             showOverlay(minutes * 60_000L)
+            SessionStore(this).startBlock(
+                LocalDate.now(),
+                SystemClock.elapsedRealtime() + minutes * 60_000L
+            )
         } catch (e: RuntimeException) {
             // Permission revoked or window rejected: fail open, never trap the user.
             Log.e(TAG, "overlay failed", e)
@@ -152,6 +158,7 @@ class BlockerService : Service() {
         timer?.cancel()
         overlay?.let { getSystemService(WindowManager::class.java).removeView(it) }
         overlay = null
+        SessionStore(this).endBlock()
         super.onDestroy()
     }
 
