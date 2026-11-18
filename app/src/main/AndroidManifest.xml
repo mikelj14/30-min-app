@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Fire at window start even in Doze. User grants in "Alarms & reminders". -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:allowBackup="false"
@@ -28,8 +30,13 @@
             <!-- Required for specialUse; Play reviewers read this. -->
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Shows a full-screen countdown that blocks phone use for a user-chosen period after waking up." />
+                android:value="Waits during the user's chosen wake-up window, then shows a full-screen countdown that blocks phone use for a user-chosen period after waking up." />
         </service>
+
+        <!-- Only our own PendingIntents reach it. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

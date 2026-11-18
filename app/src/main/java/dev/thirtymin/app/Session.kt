@@ -3,6 +3,7 @@ package dev.thirtymin.app
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZonedDateTime
 
 // Pure session logic: no Android imports, so it runs in plain JVM unit tests.
 // Android code feeds in the clock and stored values and acts on the answer.
@@ -40,11 +41,30 @@ fun phase(
     else -> Phase.IDLE
 }
 
-/** Unlock seen: start a block only when armed. Duplicate unlocks are no-ops. */
-fun shouldStartOnUnlock(phase: Phase): Boolean = phase == Phase.ARMED
+enum class ArmAction { BLOCK, WAIT, STOP }
+
+/**
+ * Armed service saw the alarm, a screen-on or an unlock: what now?
+ * Only ARMED can block, so stale alarms (window over) and duplicates
+ * (already blocked today, even before a process restart) both STOP.
+ * "In use" = screen on AND past the lock screen.
+ */
+fun armAction(phase: Phase, interactive: Boolean, keyguardLocked: Boolean): ArmAction = when {
+    phase != Phase.ARMED -> ArmAction.STOP
+    interactive && !keyguardLocked -> ArmAction.BLOCK
+    else -> ArmAction.WAIT
+}
 
 /** When to fire the next alarm: today's window start if still ahead, else tomorrow's. */
 fun nextWindowStart(now: LocalDateTime, schedule: Schedule): LocalDateTime {
     val today = now.toLocalDate().atTime(schedule.start)
     return if (now < today) today else today.plusDays(1)
 }
+
+/**
+ * [nextWindowStart] pinned to a time zone. Calendar math, not +24h, so a
+ * DST change still fires at 06:00 local. A start inside a DST gap
+ * (e.g. 02:30 on spring-forward night) moves forward by the gap length.
+ */
+fun nextAlarmAt(now: ZonedDateTime, schedule: Schedule): ZonedDateTime =
+    nextWindowStart(now.toLocalDateTime(), schedule).atZone(now.zone)

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 class MainActivity : ComponentActivity() {
     // Re-read on resume: user may come back from the settings page.
     private var canOverlay by mutableStateOf(false)
+    private var canAlarm by mutableStateOf(false)
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -50,6 +52,15 @@ class MainActivity : ComponentActivity() {
                             Text("30-Min needs permission to draw over other apps.")
                             Button(onClick = ::openOverlaySettings) { Text("Grant permission") }
                         }
+                        if (!canAlarm) {
+                            Text("Allow alarms so the block can start each morning.")
+                            Button(onClick = ::openAlarmSettings) { Text("Allow alarms") }
+                        } else if (BuildConfig.DEBUG) {
+                            // Stripped from release: BuildConfig.DEBUG is a compile-time false there.
+                            Button(onClick = ::scheduleTestAlarm) {
+                                Text("Test: window starts in 1 min")
+                            }
+                        }
                     }
                 }
             }
@@ -59,6 +70,23 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         canOverlay = Settings.canDrawOverlays(this)
+        // Alarms vanish on force-stop and permission revoke: re-set on every open.
+        canAlarm = Alarms.scheduleDaily(this)
+    }
+
+    private fun openAlarmSettings() {
+        startActivity(
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
+        )
+    }
+
+    private fun scheduleTestAlarm() {
+        val ok = Alarms.scheduleDebug(this)
+        Toast.makeText(
+            this,
+            if (ok) "Test alarm in 1 min. Lock the phone." else "Alarm denied",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun openOverlaySettings() {

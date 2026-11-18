@@ -26,6 +26,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true // BuildConfig.DEBUG hides debug-only UI in release
     }
 }
 

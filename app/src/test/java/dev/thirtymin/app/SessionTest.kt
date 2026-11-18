@@ -1,11 +1,11 @@
 package dev.thirtymin.app
 
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionTest {
@@ -38,9 +38,43 @@ class SessionTest {
     @Test fun expiredBlockIsNotActive() =
         assertEquals(Phase.DONE, phaseAt(at(7), lastStart = day, activeUntil = 1_000))
 
-    @Test fun onlyArmedStartsOnUnlock() {
-        assertTrue(shouldStartOnUnlock(Phase.ARMED))
-        Phase.entries.filter { it != Phase.ARMED }.forEach { assertFalse(shouldStartOnUnlock(it)) }
+    @Test fun armedAndInUseBlocks() = assertEquals(
+        ArmAction.BLOCK,
+        armAction(Phase.ARMED, interactive = true, keyguardLocked = false)
+    )
+
+    @Test fun armedButScreenOffOrLockedWaits() {
+        assertEquals(
+            ArmAction.WAIT,
+            armAction(Phase.ARMED, interactive = false, keyguardLocked = true)
+        )
+        assertEquals(
+            ArmAction.WAIT,
+            armAction(Phase.ARMED, interactive = true, keyguardLocked = true)
+        )
+        // Screen off but keyguard not yet engaged (lock delay): not "in use".
+        assertEquals(
+            ArmAction.WAIT,
+            armAction(Phase.ARMED, interactive = false, keyguardLocked = false)
+        )
+    }
+
+    @Test fun notArmedStopsEvenWhenInUse() = Phase.entries.filter { it != Phase.ARMED }.forEach {
+        assertEquals(ArmAction.STOP, armAction(it, interactive = true, keyguardLocked = false))
+    }
+
+    @Test fun staleAlarmAfterWindowStops() {
+        val p = phaseAt(at(9, 30)) // alarm delivered late, window 06:00-09:00 over
+        assertEquals(ArmAction.STOP, armAction(p, interactive = true, keyguardLocked = false))
+    }
+
+    @Test fun nextAlarmUsesCalendarNotPlus24hAcrossDst() {
+        // Europe/London springs forward 2026-03-29 01:00 -> 02:00: that day is 23h long.
+        val london = ZoneId.of("Europe/London")
+        val now = LocalDate.of(2026, 3, 28).atTime(6, 0).atZone(london)
+        val next = nextAlarmAt(now, schedule)
+        assertEquals(LocalDate.of(2026, 3, 29).atTime(6, 0), next.toLocalDateTime())
+        assertEquals(Duration.ofHours(23), Duration.between(now, next))
     }
 
     @Test fun nextAlarmTodayWhenBeforeStart() = assertEquals(

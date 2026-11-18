@@ -28,7 +28,8 @@ class SessionStore(context: Context) {
                 .getLong(KEY_ACTIVE_UNTIL, -1)
                 .takeIf { it >= 0 && prefs.getInt(KEY_BOOT, -1) == bootCount() }
 
-    fun startBlock(today: LocalDate, until: Long) = prefs.edit {
+    /** commit = true: written to disk before returning (apply() is async and can be lost on kill). */
+    fun startBlock(today: LocalDate, until: Long) = prefs.edit(commit = true) {
         putLong(KEY_LAST_START, today.toEpochDay())
         putLong(KEY_ACTIVE_UNTIL, until)
         putInt(KEY_BOOT, bootCount())
