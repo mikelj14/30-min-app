@@ -1,0 +1,19 @@
+# Gradle
+build/
+.gradle/
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+
+# Machine-specific SDK path
+local.properties
+
+# Signing material and publishing credentials (never commit)
+*.jks
+*.keystore
+play-service-account.json
+
+# OS
+.DS_Store
