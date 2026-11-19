@@ -3,7 +3,8 @@ package dev.thirtymin.app
 import java.time.LocalDate
 import java.time.YearMonth
 
-// Pure streak logic, like Session.kt: plain JVM, no Android or Room imports.
+// Pure streak logic, like Session.kt: plain JVM, no Android imports (SessionRecord is a
+// plain data class; its Room annotations do nothing outside Room).
 
 /**
  * How a day's block ended.
@@ -84,4 +85,20 @@ fun monthStats(month: YearMonth, days: Map<LocalDate, Outcome>, today: LocalDate
     val marks = (1..month.lengthOfMonth()).map { dayMark(month.atDay(it), days, today) }
     val done = marks.count { it == DayMark.DONE }
     return MonthStats(done, done + marks.count { it == DayMark.MISSED })
+}
+
+/** Home screen (design 1a) numbers. [minutes] = planned minutes of completed mornings. */
+data class HomeStats(val streak: Int, val longest: Int, val mornings: Int, val minutes: Int)
+
+fun homeStats(records: List<SessionRecord>, today: LocalDate): HomeStats {
+    val days = records.outcomeMap()
+    val done = records.filter { it.outcome == Outcome.COMPLETED }
+    return HomeStats(
+        currentStreak(days, today),
+        longestStreak(days),
+        done.size,
+        done.sumOf {
+            it.plannedMinutes
+        }
+    )
 }

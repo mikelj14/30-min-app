@@ -15,7 +15,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.os.CountDownTimer
@@ -27,19 +26,21 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.telecom.TelecomManager
 import android.util.Log
-import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service that covers the screen with a countdown overlay and
@@ -56,8 +57,17 @@ class BlockerService : Service() {
     private var phoneApps = emptySet<String>()
     private var timer: CountDownTimer? = null
 
+    // Compose overlay state: the service owns it, BlockScreen only draws it.
+    private var overlayOwner: OverlayOwner? = null
+    private var totalMs = 1L
+    private var remainingMs by mutableLongStateOf(0L)
+    private var streak by mutableStateOf<Int?>(null)
+    private var endedEarly by mutableStateOf(false)
+    private var completed by mutableStateOf(false)
+
     // History (Room). Day fixed at block start, so a midnight or zone change
-    // mid-block still closes the right row. endedAs null at destroy = SYSTEM.
+    // mid-block still closes the right row. Outcome is written the moment it is
+    // decided (see close); never written = process died = SYSTEM.
     private var historyDay: LocalDate? = null
     private var endedAs: Outcome? = null
 
@@ -81,7 +91,7 @@ class BlockerService : Service() {
         mainExecutor.execute {
             if (!Settings.canDrawOverlays(this)) {
                 Log.i(TAG, "overlay permission revoked")
-                if (overlay != null) endedAs = Outcome.QUIT // user turned the block off
+                if (overlay != null) close(Outcome.QUIT) // user turned the block off
                 stopSelf()
             }
         }
@@ -227,116 +237,32 @@ class BlockerService : Service() {
     }
 
     private fun showOverlay(durationMs: Long) {
-        val countdown =
-            TextView(this).apply {
-                setTextColor(Color.WHITE)
-                textSize = 64f
-                gravity = Gravity.CENTER
-            }
-        // Emergency exit: tap ESCAPE_TAPS times -> "End block" -> confirm Yes/No.
-        var taps = 0
-        val confirm =
-            LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                visibility = View.GONE
-                addView(
-                    TextView(context).apply {
-                        text = "Are you sure you want to leave?"
-                        setTextColor(Color.WHITE)
-                        textSize = 20f
-                    }
+        totalMs = durationMs
+        remainingMs = durationMs
+        val owner = OverlayOwner().also { overlayOwner = it }
+        val view =
+            ComposeView(this).apply {
+                // Keep the composition while detached during a phone pass.
+                setViewCompositionStrategy(
+                    ViewCompositionStrategy.DisposeOnLifecycleDestroyed(owner)
                 )
-                addView(
-                    Button(context).apply {
-                        text = "Yes"
-                    }.also {
-                        it.setOnClickListener {
-                            endedAs = Outcome.QUIT
-                            stopSelf()
-                        }
+                setContent {
+                    ThirtyMinTheme {
+                        BlockScreen(
+                            remainingMs,
+                            totalMs,
+                            streak,
+                            endedEarly,
+                            completed,
+                            ::exitEarly,
+                            ::openDialer,
+                            onContinue = ::stopSelf
+                        )
                     }
-                )
-                addView(
-                    Button(context).apply { text = "No" }.also {
-                        it.setOnClickListener {
-                            visibility = View.GONE // hides the confirm box (outer apply receiver)
-                            taps = 0
-                        }
-                    }
-                )
-            }
-        val endButton =
-            Button(this).apply {
-                text = "End block"
-                visibility = View.GONE
-                setOnClickListener {
-                    visibility = View.GONE
-                    confirm.visibility = View.VISIBLE
                 }
             }
-        val center =
-            LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                addView(countdown)
-                addView(endButton)
-                addView(confirm)
-            }
-        // Calls: small icon in the top-right corner, opened by a long press only,
-        // so a stray tap cannot hide the block. Always reachable for emergencies.
-        val dp = resources.displayMetrics.density
-        val call =
-            LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                contentDescription = "Phone. Touch and hold to make a call."
-                setPadding(
-                    (12 * dp).toInt(),
-                    (12 * dp).toInt(),
-                    (12 * dp).toInt(),
-                    (12 * dp).toInt()
-                )
-                addView(
-                    ImageView(context).apply {
-                        setImageResource(R.drawable.ic_call)
-                        setColorFilter(CALL_GREEN)
-                    },
-                    LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt())
-                )
-                addView(
-                    TextView(context).apply {
-                        text = "Hold"
-                        setTextColor(Color.GRAY)
-                        textSize = 11f
-                    }
-                )
-                setOnLongClickListener {
-                    openDialer()
-                    true
-                }
-            }
-        val root =
-            FrameLayout(this).apply {
-                setBackgroundColor(Color.BLACK)
-                addView(center, FrameLayout.LayoutParams(MATCH, MATCH))
-                addView(
-                    call,
-                    FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply {
-                        setMargins(0, (40 * dp).toInt(), (12 * dp).toInt(), 0)
-                    }
-                )
-                setOnTouchListener { v, event ->
-                    val asking = confirm.visibility == View.VISIBLE
-                    if (event.action == MotionEvent.ACTION_DOWN && !asking &&
-                        ++taps >= ESCAPE_TAPS
-                    ) {
-                        endButton.visibility = View.VISIBLE
-                    }
-                    v.performClick()
-                    true // consume every touch
-                }
-            }
+        owner.attach(view)
+        loadStreak(owner)
         val params =
             WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -346,22 +272,58 @@ class BlockerService : Service() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.OPAQUE
             )
-        getSystemService(WindowManager::class.java).addView(root, params)
-        overlay = root
+        getSystemService(WindowManager::class.java).addView(view, params)
+        overlay = view
         overlayParams = params
 
         timer =
             object : CountDownTimer(durationMs, 1_000) {
                 override fun onTick(left: Long) {
-                    val s = left / 1_000
-                    countdown.text = "%d:%02d".format(s / 60, s % 60)
+                    remainingMs = left
                 }
 
-                override fun onFinish() {
-                    endedAs = Outcome.COMPLETED
-                    stopSelf()
-                }
+                override fun onFinish() = complete()
             }.start()
+    }
+
+    /** Streak for the exit warning. Read in the background; failure = no number shown. */
+    private fun loadStreak(owner: OverlayOwner) = owner.lifecycleScope.launch {
+        streak = runCatching {
+            val days = HistoryDb.get(this@BlockerService).sessions().outcomes().first()
+            currentStreak(days, LocalDate.now())
+        }.getOrNull()
+    }
+
+    /** Confirmed in the exit card: say goodbye briefly, then end (fail open). */
+    private fun exitEarly() {
+        if (endedAs != null) return
+        close(Outcome.QUIT)
+        endedEarly = true
+        handler.postDelayed({ stopSelf() }, GOODBYE_MS)
+    }
+
+    /**
+     * Timer done: record it, then show design 1c until Continue or
+     * [COMPLETE_MS]. During a phone pass (overlay detached) just end, so no
+     * screen pops up over the call.
+     */
+    private fun complete() {
+        close(Outcome.COMPLETED)
+        if (overlay?.isAttachedToWindow != true) {
+            stopSelf()
+            return
+        }
+        completed = true
+        handler.postDelayed({ stopSelf() }, COMPLETE_MS)
+    }
+
+    /** First decided outcome wins; written at once so a later kill cannot lose it. */
+    private fun close(outcome: Outcome) {
+        if (endedAs != null) return
+        endedAs = outcome
+        val day = historyDay ?: return // manual or short block: not recorded
+        val at = System.currentTimeMillis()
+        HistoryDb.record(this) { finish(day.toEpochDay(), outcome, at) }
     }
 
     /**
@@ -454,27 +416,21 @@ class BlockerService : Service() {
             getSystemService(WindowManager::class.java).removeView(it)
         }
         overlay = null
+        overlayOwner?.destroy() // disposes the composition, cancels the streak read
         SessionStore(this).endBlock()
-        // Last, after all cleanup; queued off the main thread and cannot throw here.
-        val day = historyDay
-        val outcome = endedAs
-        if (day != null && outcome != null) {
-            val at = System.currentTimeMillis()
-            HistoryDb.record(this) { finish(day.toEpochDay(), outcome, at) }
-        }
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_MINUTES = "minutes"
         const val ACTION_ARM = "dev.thirtymin.app.ARM"
-        private const val ESCAPE_TAPS = 5
+        private const val GOODBYE_MS = 2_000L
+
+        // Complete screen closes itself, so it can never hold the phone.
+        private const val COMPLETE_MS = 60_000L
 
         // Time to dial before the overlay returns; a live call keeps extending it.
         private const val PHONE_PASS_MS = 30_000L
-        private val CALL_GREEN = Color.rgb(0x8D, 0xB5, 0x8A)
-        private const val MATCH = FrameLayout.LayoutParams.MATCH_PARENT
-        private const val WRAP = FrameLayout.LayoutParams.WRAP_CONTENT
         private const val PASS_POLL_MS = 1_000L
 
         // After a call ends the block returns within this, even inside the dialer.

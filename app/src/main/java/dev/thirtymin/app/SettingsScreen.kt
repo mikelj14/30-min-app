@@ -1,6 +1,7 @@
 package dev.thirtymin.app
 
 import android.text.format.DateFormat
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +54,8 @@ fun SettingsScreen(
     saved: Schedule,
     onSave: (LocalTime, LocalTime, Int) -> String?,
     setupSummary: String,
-    onOpenSetup: () -> Unit
+    onOpenSetup: () -> Unit,
+    onOpenTutorial: () -> Unit
 ) {
     var start by remember(saved) { mutableStateOf(saved.start) }
     var end by remember(saved) { mutableStateOf(saved.end) }
@@ -145,29 +147,17 @@ fun SettingsScreen(
         Section("This phone") {
             Card {
                 Column {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onOpenSetup)
-                            .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_smartphone),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text("Phone setup", style = MaterialTheme.typography.titleSmall)
-                            Hint(setupSummary, inset = 0.dp)
-                        }
-                        Icon(
-                            painterResource(R.drawable.ic_chevron_right),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    LinkRow(R.drawable.ic_smartphone, "Phone setup", setupSummary, onOpenSetup)
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 20.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    LinkRow(
+                        R.drawable.ic_lightbulb,
+                        "How it works",
+                        "Unlock, calls, exit and streaks, with practice",
+                        onOpenTutorial
+                    )
                     HorizontalDivider(
                         Modifier.padding(horizontal = 20.dp),
                         color = MaterialTheme.colorScheme.outlineVariant
@@ -204,6 +194,24 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+@Composable
+private fun LinkRow(@DrawableRes icon: Int, title: String, hint: String, onClick: () -> Unit) = Row(
+    Modifier
+        .fillMaxWidth()
+        .clickable(onClick = onClick)
+        .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
+    horizontalArrangement = Arrangement.spacedBy(16.dp),
+    verticalAlignment = Alignment.CenterVertically
+) {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    Icon(painterResource(icon), contentDescription = null, tint = tint)
+    Column(Modifier.weight(1f)) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        Hint(hint, inset = 0.dp)
+    }
+    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = tint)
 }
 
 private enum class Picking { START, END }

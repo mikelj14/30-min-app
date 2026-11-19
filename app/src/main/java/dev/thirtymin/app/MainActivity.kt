@@ -20,7 +20,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 
 class MainActivity : ComponentActivity() {
@@ -57,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private var canSeeUsage by mutableStateOf(false)
     private var schedule by mutableStateOf(SessionStore.DEFAULT_SCHEDULE)
     private var showSetup by mutableStateOf(false)
+    private var showTutorial by mutableStateOf(false)
 
     // Sticky for this visit: the alarm is fixed on resume, the warning stays readable.
     private var alarmWasLost by mutableStateOf(false)
@@ -74,14 +79,30 @@ class MainActivity : ComponentActivity() {
         readPermissions()
         // First run, or a required permission was lost: start on the checklist.
         showSetup = !(canOverlay && canAlarm)
+        // Once, right after setup (or on the first open after an update that added it).
+        showTutorial = !SessionStore(this).tutorialSeen
         setContent {
             ThirtyMinTheme {
                 var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
+                // Room runs the query off the main thread; the Flow re-emits on every write.
+                val history = remember { HistoryDb.get(this@MainActivity).sessions().safeAll() }
+                val rows by history.collectAsState(emptyList())
                 BackHandler(enabled = showSetup) { showSetup = false }
+                BackHandler(enabled = showTutorial && !showSetup, onBack = ::closeTutorial)
                 Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
-                    bottomBar = { if (!showSetup) NavBar(tab) { tab = it } }
+                    bottomBar = { if (!showSetup && !showTutorial) NavBar(tab) { tab = it } }
                 ) { insets ->
+                    // Pager pages fill the screen: outside the scrolling column.
+                    if (showTutorial && !showSetup) {
+                        Box(Modifier.fillMaxSize().padding(insets)) {
+                            TutorialScreen(schedule) {
+                                closeTutorial()
+                                tab = Tab.TODAY
+                            }
+                        }
+                        return@Scaffold
+                    }
                     // key: each destination gets its own scroll position, starting at the top.
                     key(showSetup, tab) {
                         Column(
@@ -96,26 +117,21 @@ class MainActivity : ComponentActivity() {
                                     tab = Tab.TODAY
                                 }
 
-                                tab == Tab.TODAY -> Today()
+                                tab == Tab.TODAY -> Today(rows) { tab = Tab.HISTORY }
 
-                                tab == Tab.HISTORY -> {
-                                    // Room runs the query off the main thread; the Flow
-                                    // re-emits when a block writes a row.
-                                    val history =
-                                        remember {
-                                            HistoryDb.get(this@MainActivity).sessions().outcomes()
-                                        }
-                                    val days by history.collectAsState(emptyMap())
-                                    // ponytail: "today" read on recomposition; a screen left open past midnight
-                                    // shows yesterday as today until it redraws.
-                                    HistoryScreen(days, LocalDate.now())
-                                }
+                                // ponytail: "today" read on recomposition; a screen left open
+                                // past midnight shows yesterday as today until it redraws.
+                                tab == Tab.HISTORY -> HistoryScreen(
+                                    rows.outcomeMap(),
+                                    LocalDate.now()
+                                )
 
                                 else -> SettingsScreen(
                                     schedule,
                                     ::saveSchedule,
                                     setupSummary(),
-                                    onOpenSetup = { showSetup = true }
+                                    onOpenSetup = { showSetup = true },
+                                    onOpenTutorial = { showTutorial = true }
                                 )
                             }
                         }
@@ -133,6 +149,11 @@ class MainActivity : ComponentActivity() {
         // Alarms vanish on force-stop and permission revoke: re-set on every open.
         Alarms.scheduleDaily(this)
         if (store.takeAlarmLost()) alarmWasLost = true
+    }
+
+    private fun closeTutorial() {
+        SessionStore(this).tutorialSeen = true
+        showTutorial = false
     }
 
     private fun readPermissions() {
@@ -223,25 +244,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** ponytail: prototype controls until the Phase 5.6 home dashboard (design 1a). */
     @Composable
-    private fun Today() {
-        Column(
-            Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text("30-Min", style = MaterialTheme.typography.titleMedium)
+    private fun Today(rows: List<SessionRecord>, openHistory: () -> Unit) =
+        HomeScreen(rows, LocalDateTime.now(), schedule, openHistory) {
             if (alarmWasLost) LostAlarmCard { showSetup = true }
-            // Manual block is a test tool, not a morning (phase 5.5): debug builds only.
-            if (canOverlay && BuildConfig.DEBUG) {
-                Button(onClick = ::startBlock) { Text("Block for $PROTOTYPE_MINUTES min") }
-            }
-            if (canAlarm && BuildConfig.DEBUG) {
-                // Stripped from release: BuildConfig.DEBUG is a compile-time false there.
-                Button(onClick = ::scheduleTestAlarm) { Text("Test: window starts in 1 min") }
+            // Test tools, not mornings: debug builds only (BuildConfig.DEBUG is a
+            // compile-time false in release, so these are stripped there).
+            if (BuildConfig.DEBUG) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (canOverlay) {
+                        OutlinedButton(onClick = ::startBlock) {
+                            Text("Block $PROTOTYPE_MINUTES min")
+                        }
+                    }
+                    if (canAlarm) {
+                        OutlinedButton(onClick = ::scheduleTestAlarm) {
+                            Text("Test alarm")
+                        }
+                    }
+                }
             }
         }
-    }
 
     /** Null when saved, else the message the settings screen shows. */
     private fun saveSchedule(start: LocalTime, end: LocalTime, minutes: Int): String? = try {

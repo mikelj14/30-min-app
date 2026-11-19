@@ -76,4 +76,20 @@ class StreaksTest {
         )
         assertEquals(MonthStats(0, 0), monthStats(YearMonth.of(2026, 10), d, today))
     }
+
+    @Test fun homeStatsCountOnlyCompleted() {
+        fun row(daysAgo: Long, minutes: Int, o: Outcome?) =
+            SessionRecord(today.minusDays(daysAgo).toEpochDay(), 0, minutes, null, o)
+        val rows = listOf(
+            row(4, 30, COMPLETED),
+            row(3, 30, QUIT),
+            row(2, 45, COMPLETED),
+            row(1, 30, null), // process died: neutral, not counted
+            row(0, 20, COMPLETED)
+        )
+        assertEquals(
+            HomeStats(streak = 2, longest = 2, mornings = 3, minutes = 95),
+            homeStats(rows, today)
+        )
+    }
 }

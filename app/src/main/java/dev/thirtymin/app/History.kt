@@ -57,19 +57,17 @@ interface SessionDao {
     fun all(): Flow<List<SessionRecord>>
 }
 
-/**
- * History as the streak/calendar logic wants it: day -> outcome, a row
- * without an outcome counts as SYSTEM. A read failure (corrupt file, enum
- * renamed) shows an empty history instead of crashing the app.
- */
-fun SessionDao.outcomes(): Flow<Map<LocalDate, Outcome>> = all()
-    .map { rows ->
-        rows.associate { LocalDate.ofEpochDay(it.day) to (it.outcome ?: Outcome.SYSTEM) }
-    }
-    .catch {
-        Log.e("History", "history read failed", it)
-        emit(emptyMap())
-    }
+/** day -> outcome; a row without an outcome counts as SYSTEM (running or process died). */
+fun List<SessionRecord>.outcomeMap(): Map<LocalDate, Outcome> =
+    associate { LocalDate.ofEpochDay(it.day) to (it.outcome ?: Outcome.SYSTEM) }
+
+/** All rows; a read failure (corrupt file, enum renamed) gives empty history, not a crash. */
+fun SessionDao.safeAll(): Flow<List<SessionRecord>> = all().catch {
+    Log.e("History", "history read failed", it)
+    emit(emptyList())
+}
+
+fun SessionDao.outcomes(): Flow<Map<LocalDate, Outcome>> = safeAll().map { it.outcomeMap() }
 
 /**
  * Bump [version] and add a Migration on every schema change. No

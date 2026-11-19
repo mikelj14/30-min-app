@@ -76,6 +76,11 @@ class SessionStore(context: Context) {
         putInt(KEY_MINUTES, s.minutes)
     }
 
+    /** The how-it-works pages were seen (finished or skipped) once. */
+    var tutorialSeen: Boolean
+        get() = prefs.getBoolean(KEY_TUTORIAL_SEEN, false)
+        set(v) = prefs.edit { putBoolean(KEY_TUTORIAL_SEEN, v) }
+
     fun bootCount() = Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT, 0)
 
     companion object {
@@ -88,5 +93,6 @@ class SessionStore(context: Context) {
         private const val KEY_LAST_START = "last_start_epoch_day"
         private const val KEY_ACTIVE_UNTIL = "active_until_elapsed"
         private const val KEY_BOOT = "boot_count"
+        private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
     }
 }

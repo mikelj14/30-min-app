@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,7 +35,6 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
 
 /** Design 1d: one month of mornings, Monday first, plus that month's totals. */
 @Composable
@@ -96,7 +96,7 @@ private fun Calendar(month: YearMonth, days: Map<LocalDate, Outcome>, today: Loc
         Row(Modifier.fillMaxWidth()) {
             DayOfWeek.entries.forEach {
                 Text(
-                    it.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                    it.getDisplayName(TextStyle.NARROW, LocalConfiguration.current.locales[0]),
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelMedium,
