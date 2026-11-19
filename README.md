@@ -46,3 +46,18 @@ Installing to a phone still runs on the host (the container has no adb).
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 secret scan (gitleaks), Gradle wrapper validation, ktlint, Android Lint, unit tests,
 debug build and release build (R8 shrinking).
+
+## Release
+
+`.github/workflows/release.yml` runs when a version tag is pushed:
+
+```bash
+git switch main && git pull
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+It checks the tag is on `main`, runs the checks, builds a release APK signed
+with the key from GitHub secrets (`RELEASE_KEYSTORE_BASE64`,
+`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`), and publishes a GitHub
+Release with the APK and its sha256. Tag `vX.Y.Z` gives versionCode
+`X*10000 + Y*100 + Z`; tags must only go up.
