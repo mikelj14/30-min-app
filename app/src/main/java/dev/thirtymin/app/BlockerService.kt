@@ -7,6 +7,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -23,12 +25,15 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.telecom.TelecomManager
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -44,6 +49,11 @@ class BlockerService : Service() {
     private var overlay: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private val handler = Handler(Looper.getMainLooper())
+
+    // Phone pass state (overlay hidden while the user dials or talks).
+    private var passSince = 0L // wall clock ms, for usage events
+    private var passEndsAt = 0L // elapsedRealtime
+    private var phoneApps = emptySet<String>()
     private var timer: CountDownTimer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -248,20 +258,57 @@ class BlockerService : Service() {
                     confirm.visibility = View.VISIBLE
                 }
             }
-        val root =
+        val center =
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setBackgroundColor(Color.BLACK)
                 addView(countdown)
-                addView(
-                    Button(context).apply {
-                        text = "Phone"
-                        setOnClickListener { openDialer() }
-                    }
-                )
                 addView(endButton)
                 addView(confirm)
+            }
+        // Calls: small icon in the top-right corner, opened by a long press only,
+        // so a stray tap cannot hide the block. Always reachable for emergencies.
+        val dp = resources.displayMetrics.density
+        val call =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                contentDescription = "Phone. Touch and hold to make a call."
+                setPadding(
+                    (12 * dp).toInt(),
+                    (12 * dp).toInt(),
+                    (12 * dp).toInt(),
+                    (12 * dp).toInt()
+                )
+                addView(
+                    ImageView(context).apply {
+                        setImageResource(R.drawable.ic_call)
+                        setColorFilter(CALL_GREEN)
+                    },
+                    LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt())
+                )
+                addView(
+                    TextView(context).apply {
+                        text = "Hold"
+                        setTextColor(Color.GRAY)
+                        textSize = 11f
+                    }
+                )
+                setOnLongClickListener {
+                    openDialer()
+                    true
+                }
+            }
+        val root =
+            FrameLayout(this).apply {
+                setBackgroundColor(Color.BLACK)
+                addView(center, FrameLayout.LayoutParams(MATCH, MATCH))
+                addView(
+                    call,
+                    FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply {
+                        setMargins(0, (40 * dp).toInt(), (12 * dp).toInt(), 0)
+                    }
+                )
                 setOnTouchListener { v, event ->
                     val asking = confirm.visibility == View.VISIBLE
                     if (event.action == MotionEvent.ACTION_DOWN && !asking &&
@@ -304,6 +351,8 @@ class BlockerService : Service() {
      */
     private fun openDialer() {
         val root = overlay ?: return
+        // Before the launch: the dialer's "resumed" usage event must fall after this.
+        passSince = System.currentTimeMillis()
         try {
             startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: ActivityNotFoundException) {
@@ -312,25 +361,52 @@ class BlockerService : Service() {
         }
         getSystemService(WindowManager::class.java).removeView(root)
         Log.i(TAG, "phone pass started")
-        handler.postDelayed(::endPhonePass, PHONE_PASS_MS)
+        passEndsAt = SystemClock.elapsedRealtime() + PHONE_PASS_MS
+        val telecom = getSystemService(TelecomManager::class.java)
+        phoneApps = setOfNotNull(telecom.defaultDialerPackage, telecom.systemDialerPackage)
+        handler.postDelayed(passTick, PASS_POLL_MS)
     }
 
-    // ponytail: unlimited 60 s passes; cap them if users abuse the button.
-    private fun endPhonePass() {
+    // ponytail: unlimited passes; cap them if users abuse the call icon.
+    private val passTick = Runnable { checkPhonePass() }
+
+    /** Polled each second during a phone pass: bring the block back, or keep waiting. */
+    private fun checkPhonePass() {
         val root = overlay ?: return
+        val now = SystemClock.elapsedRealtime()
         // Calls (and VoIP) set the audio mode; reading it needs no permission.
-        val mode = getSystemService(AudioManager::class.java).mode
-        if (mode in CALL_MODES) {
-            handler.postDelayed(::endPhonePass, CALL_RECHECK_MS)
+        val inCall = getSystemService(AudioManager::class.java).mode in CALL_MODES
+        if (inCall) passEndsAt = maxOf(passEndsAt, now + CALL_GRACE_MS)
+        val front = foregroundApp()
+        if (!passReturns(inCall, front, phoneApps, now, passEndsAt)) {
+            handler.postDelayed(passTick, PASS_POLL_MS)
             return
         }
         try {
             getSystemService(WindowManager::class.java).addView(root, overlayParams)
-            Log.i(TAG, "phone pass over")
+            Log.i(TAG, "phone pass over, front=$front")
         } catch (e: RuntimeException) {
             Log.e(TAG, "overlay failed", e) // fail open
             stopSelf()
         }
+    }
+
+    /**
+     * Package of the activity most recently brought to the front since the pass
+     * began, or null if none yet. Without Usage Access the system returns no
+     * events, so this stays null and the pass falls back to its timer.
+     */
+    private fun foregroundApp(): String? {
+        val events =
+            getSystemService(UsageStatsManager::class.java)
+                .queryEvents(passSince, System.currentTimeMillis())
+        val e = UsageEvents.Event()
+        var front: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(e)
+            if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) front = e.packageName
+        }
+        return front
     }
 
     private fun notification(title: String): Notification {
@@ -366,8 +442,16 @@ class BlockerService : Service() {
         const val EXTRA_MINUTES = "minutes"
         const val ACTION_ARM = "dev.thirtymin.app.ARM"
         private const val ESCAPE_TAPS = 5
-        private const val PHONE_PASS_MS = 60_000L
-        private const val CALL_RECHECK_MS = 5_000L
+
+        // Time to dial before the overlay returns; a live call keeps extending it.
+        private const val PHONE_PASS_MS = 30_000L
+        private val CALL_GREEN = Color.rgb(0x8D, 0xB5, 0x8A)
+        private const val MATCH = FrameLayout.LayoutParams.MATCH_PARENT
+        private const val WRAP = FrameLayout.LayoutParams.WRAP_CONTENT
+        private const val PASS_POLL_MS = 1_000L
+
+        // After a call ends the block returns within this, even inside the dialer.
+        private const val CALL_GRACE_MS = 5_000L
         private val CALL_MODES =
             setOf(
                 AudioManager.MODE_RINGTONE,

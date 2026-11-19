@@ -93,4 +93,40 @@ class SessionTest {
     }
 
     @Test fun beforeWindowEndIsArmed() = assertEquals(Phase.ARMED, phaseAt(at(8, 59)))
+
+    @Test(expected = IllegalArgumentException::class)
+    fun windowShorterThanBlockRejected() {
+        Schedule(LocalTime.of(6, 0), LocalTime.of(6, 20), 30)
+    }
+
+    @Test fun windowEqualToBlockAllowed() =
+        assertEquals(30, Schedule(LocalTime.of(6, 0), LocalTime.of(6, 30), 30).minutes)
+
+    @Test fun userBlockLimits() {
+        val (s, e) = LocalTime.of(6, 0) to LocalTime.of(10, 0)
+        assertEquals(5, userSchedule(s, e, 5).minutes)
+        assertEquals(120, userSchedule(s, e, 120).minutes)
+        for (bad in listOf(0, 4, 121)) {
+            val err = runCatching { userSchedule(s, e, bad) }.exceptionOrNull()
+            assertEquals("minutes=$bad", "block must be 5-120 minutes", err?.message)
+        }
+    }
+
+    private val dialer = setOf("com.dialer")
+
+    @Test fun passStaysHiddenDuringCall() =
+        assertEquals(false, passReturns(true, "com.launcher", dialer, 99_000, 30_000))
+
+    @Test fun passReturnsWhenUserLeavesDialer() =
+        assertEquals(true, passReturns(false, "com.launcher", dialer, 1_000, 30_000))
+
+    @Test fun passWaitsInDialerUntilTimeUp() {
+        assertEquals(false, passReturns(false, "com.dialer", dialer, 29_999, 30_000))
+        assertEquals(true, passReturns(false, "com.dialer", dialer, 30_000, 30_000))
+    }
+
+    @Test fun passWithoutUsageAccessIsTimed() {
+        assertEquals(false, passReturns(false, null, dialer, 1_000, 30_000))
+        assertEquals(true, passReturns(false, null, dialer, 30_000, 30_000))
+    }
 }

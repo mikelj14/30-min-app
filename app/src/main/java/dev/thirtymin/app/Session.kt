@@ -1,5 +1,6 @@
 package dev.thirtymin.app
 
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -14,7 +15,24 @@ data class Schedule(val start: LocalTime, val end: LocalTime, val minutes: Int) 
     init {
         require(start < end) { "window must start before it ends" }
         require(minutes > 0) { "minutes must be positive" }
+        require(Duration.between(start, end).toMinutes() >= minutes) {
+            "window must be at least as long as the block"
+        }
     }
+}
+
+/** Block lengths a user may pick. Debug and prototype blocks are shorter and skip this. */
+val BLOCK_MINUTES = 5..120
+
+/**
+ * Settings screen input -> [Schedule]. Throws IllegalArgumentException whose
+ * message the screen shows as is.
+ */
+fun userSchedule(start: LocalTime, end: LocalTime, minutes: Int): Schedule {
+    require(minutes in BLOCK_MINUTES) {
+        "block must be ${BLOCK_MINUTES.first}-${BLOCK_MINUTES.last} minutes"
+    }
+    return Schedule(start, end, minutes)
 }
 
 enum class Phase { IDLE, ARMED, ACTIVE, DONE }
@@ -68,3 +86,21 @@ fun nextWindowStart(now: LocalDateTime, schedule: Schedule): LocalDateTime {
  */
 fun nextAlarmAt(now: ZonedDateTime, schedule: Schedule): ZonedDateTime =
     nextWindowStart(now.toLocalDateTime(), schedule).atZone(now.zone)
+
+/**
+ * During a phone pass: should the block come back now?
+ * A live call always keeps it hidden. Otherwise it returns as soon as an app
+ * other than the phone app is in front ([front] null = unknown, e.g. no Usage
+ * Access), or when the pass time runs out.
+ */
+fun passReturns(
+    inCall: Boolean,
+    front: String?,
+    phoneApps: Set<String>,
+    nowElapsed: Long,
+    endsAt: Long
+): Boolean = when {
+    inCall -> false
+    front != null && front !in phoneApps -> true
+    else -> nowElapsed >= endsAt
+}

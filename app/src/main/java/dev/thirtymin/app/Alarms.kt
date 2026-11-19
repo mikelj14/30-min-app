@@ -17,15 +17,27 @@ import java.time.ZonedDateTime
  * carry different windows through the same receiver and service.
  */
 object Alarms {
-    // ponytail: hard-coded until the Phase 5 settings screen stores one.
-    val DAILY = Schedule(LocalTime.of(6, 0), LocalTime.of(10, 0), 30)
-
     const val ACTION_DAILY = "dev.thirtymin.app.ALARM_DAILY"
     const val ACTION_DEBUG = "dev.thirtymin.app.ALARM_DEBUG"
     private const val TAG = "Alarms"
 
-    fun scheduleDaily(context: Context): Boolean =
-        set(context, ACTION_DAILY, DAILY, nextAlarmAt(ZonedDateTime.now(), DAILY))
+    fun scheduleDaily(context: Context): Boolean {
+        val s = SessionStore(context).schedule
+        return set(context, ACTION_DAILY, s, nextAlarmAt(ZonedDateTime.now(), s))
+    }
+
+    /**
+     * Save new settings and move the daily alarm. Refused (false) during a
+     * block: changes apply from the next window. An armed service keeps the
+     * schedule it was started with, so today's window is never cut mid-way.
+     */
+    fun updateSchedule(context: Context, s: Schedule): Boolean {
+        val store = SessionStore(context)
+        if (store.blockRunning()) return false
+        store.saveSchedule(s)
+        scheduleDaily(context) // same PendingIntent identity: replaces the old alarm
+        return true
+    }
 
     /** Debug builds only: a window that opens in 1 minute and lasts 3 (short, to test the timeout). */
     fun scheduleDebug(context: Context): Boolean {
@@ -97,7 +109,8 @@ class AlarmReceiver : BroadcastReceiver() {
         // future days. Re-checks the exact alarm permission each time.
         if (intent.action == Alarms.ACTION_DAILY || reschedule) Alarms.scheduleDaily(context)
         // System events carry no schedule; they stand for the daily one.
-        val schedule = if (reschedule) Alarms.DAILY else intent.schedule() ?: return
+        val schedule =
+            (if (reschedule) SessionStore(context).schedule else intent.schedule()) ?: return
 
         // Stale (delivered after window end) or already blocked today: stay quiet.
         val store = SessionStore(context)

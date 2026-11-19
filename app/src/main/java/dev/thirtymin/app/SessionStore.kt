@@ -1,12 +1,15 @@
 package dev.thirtymin.app
 
 import android.content.Context
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.edit
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
- * Persists the two facts [phase] needs, so they survive process death.
+ * Persists the facts [phase] needs and the user's [Schedule], so they survive
+ * process death, reboot and app updates.
  * Lives in /data/data/dev.thirtymin.app/shared_prefs/session.xml.
  */
 class SessionStore(context: Context) {
@@ -37,11 +40,35 @@ class SessionStore(context: Context) {
 
     fun endBlock() = prefs.edit { remove(KEY_ACTIVE_UNTIL) }
 
+    /** Saved settings, or [DEFAULT_SCHEDULE] if never saved or unreadable (fail safe, not crash). */
+    val schedule: Schedule
+        get() =
+            runCatching {
+                Schedule(
+                    LocalTime.ofSecondOfDay(prefs.getInt(KEY_START, -1).toLong()),
+                    LocalTime.ofSecondOfDay(prefs.getInt(KEY_END, -1).toLong()),
+                    prefs.getInt(KEY_MINUTES, -1)
+                )
+            }.getOrDefault(DEFAULT_SCHEDULE)
+
+    /** True while a block runs (same test as [phase] ACTIVE). */
+    fun blockRunning(): Boolean = activeUntil?.let { SystemClock.elapsedRealtime() < it } == true
+
+    fun saveSchedule(s: Schedule) = prefs.edit(commit = true) {
+        putInt(KEY_START, s.start.toSecondOfDay())
+        putInt(KEY_END, s.end.toSecondOfDay())
+        putInt(KEY_MINUTES, s.minutes)
+    }
+
     private fun bootCount() = Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT, 0)
 
-    private companion object {
-        const val KEY_LAST_START = "last_start_epoch_day"
-        const val KEY_ACTIVE_UNTIL = "active_until_elapsed"
-        const val KEY_BOOT = "boot_count"
+    companion object {
+        val DEFAULT_SCHEDULE = Schedule(LocalTime.of(6, 0), LocalTime.of(10, 0), 30)
+        private const val KEY_START = "window_start_sec"
+        private const val KEY_END = "window_end_sec"
+        private const val KEY_MINUTES = "block_minutes"
+        private const val KEY_LAST_START = "last_start_epoch_day"
+        private const val KEY_ACTIVE_UNTIL = "active_until_elapsed"
+        private const val KEY_BOOT = "boot_count"
     }
 }
