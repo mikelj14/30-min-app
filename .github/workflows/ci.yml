@@ -49,8 +49,11 @@ jobs:
       - name: Install Android SDK packages
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
 
+      # lintDebug: Android Lint (API levels, manifest, Compose rules); fails on errors.
+      # assembleRelease: runs R8 shrinking, which can break code (reflection,
+      # generated Room classes) in ways a debug build never shows. Unsigned here.
       - name: Lint, test, build
-        run: ./gradlew ktlintCheck testDebugUnitTest assembleDebug
+        run: ./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleRelease
 
       - name: Upload reports on failure
         if: failure()
