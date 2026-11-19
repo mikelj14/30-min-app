@@ -1,11 +1,13 @@
 package dev.thirtymin.app
 
 import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,10 +15,14 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.os.CountDownTimer
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -36,6 +42,8 @@ import java.time.LocalDateTime
  */
 class BlockerService : Service() {
     private var overlay: View? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private val handler = Handler(Looper.getMainLooper())
     private var timer: CountDownTimer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -51,6 +59,27 @@ class BlockerService : Service() {
         if (overlay == null) stopSelf() // a running block finishes on its own timer
     }
 
+    // "Display over other apps" revoked mid-session: the system hides the overlay
+    // but keeps us alive, so end cleanly instead of lingering as an empty FGS.
+    // Called on a binder thread; hop to main, where all service state lives.
+    private val overlayPermissionWatcher = AppOpsManager.OnOpChangedListener { _, _ ->
+        mainExecutor.execute {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.i(TAG, "overlay permission revoked")
+                stopSelf()
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(AppOpsManager::class.java).startWatchingMode(
+            AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+            packageName,
+            overlayPermissionWatcher
+        )
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (overlay != null) return START_NOT_STICKY // already blocking
 
@@ -61,6 +90,11 @@ class BlockerService : Service() {
             notification(if (arming) "Waiting for you to wake up" else "Phone blocked"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         )
+        // No permission, no block: stop before anything marks today as spent.
+        if (!Settings.canDrawOverlays(this)) {
+            Log.i(TAG, "no overlay permission, not starting")
+            return stop()
+        }
         if (arming) {
             val s = intent.schedule() ?: return stop()
             schedule = s
@@ -220,6 +254,12 @@ class BlockerService : Service() {
                 gravity = Gravity.CENTER
                 setBackgroundColor(Color.BLACK)
                 addView(countdown)
+                addView(
+                    Button(context).apply {
+                        text = "Phone"
+                        setOnClickListener { openDialer() }
+                    }
+                )
                 addView(endButton)
                 addView(confirm)
                 setOnTouchListener { v, event ->
@@ -244,6 +284,7 @@ class BlockerService : Service() {
             )
         getSystemService(WindowManager::class.java).addView(root, params)
         overlay = root
+        overlayParams = params
 
         timer =
             object : CountDownTimer(durationMs, 1_000) {
@@ -254,6 +295,42 @@ class BlockerService : Service() {
 
                 override fun onFinish() = stopSelf()
             }.start()
+    }
+
+    /**
+     * Phone button: open the dialer without ending the block; the countdown keeps
+     * running. Launch first, while our overlay is still visible: that visible
+     * overlay is what exempts us from background activity start limits.
+     */
+    private fun openDialer() {
+        val root = overlay ?: return
+        try {
+            startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "no dialer", e)
+            return
+        }
+        getSystemService(WindowManager::class.java).removeView(root)
+        Log.i(TAG, "phone pass started")
+        handler.postDelayed(::endPhonePass, PHONE_PASS_MS)
+    }
+
+    // ponytail: unlimited 60 s passes; cap them if users abuse the button.
+    private fun endPhonePass() {
+        val root = overlay ?: return
+        // Calls (and VoIP) set the audio mode; reading it needs no permission.
+        val mode = getSystemService(AudioManager::class.java).mode
+        if (mode in CALL_MODES) {
+            handler.postDelayed(::endPhonePass, CALL_RECHECK_MS)
+            return
+        }
+        try {
+            getSystemService(WindowManager::class.java).addView(root, overlayParams)
+            Log.i(TAG, "phone pass over")
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "overlay failed", e) // fail open
+            stopSelf()
+        }
     }
 
     private fun notification(title: String): Notification {
@@ -270,11 +347,16 @@ class BlockerService : Service() {
     }
 
     override fun onDestroy() {
+        getSystemService(AppOpsManager::class.java).stopWatchingMode(overlayPermissionWatcher)
         timer?.cancel()
         wakeReceiver?.let(::unregisterReceiver)
         wakeReceiver = null
         getSystemService(AlarmManager::class.java).cancel(windowEnd)
-        overlay?.let { getSystemService(WindowManager::class.java).removeView(it) }
+        handler.removeCallbacksAndMessages(null)
+        // Not attached during a phone pass; removeView would throw.
+        overlay?.takeIf { it.isAttachedToWindow }?.let {
+            getSystemService(WindowManager::class.java).removeView(it)
+        }
         overlay = null
         SessionStore(this).endBlock()
         super.onDestroy()
@@ -284,6 +366,14 @@ class BlockerService : Service() {
         const val EXTRA_MINUTES = "minutes"
         const val ACTION_ARM = "dev.thirtymin.app.ARM"
         private const val ESCAPE_TAPS = 5
+        private const val PHONE_PASS_MS = 60_000L
+        private const val CALL_RECHECK_MS = 5_000L
+        private val CALL_MODES =
+            setOf(
+                AudioManager.MODE_RINGTONE,
+                AudioManager.MODE_IN_CALL,
+                AudioManager.MODE_IN_COMMUNICATION
+            )
         private const val TAG = "BlockerService"
         private const val CHANNEL_ID = "block"
         private const val NOTIFICATION_ID = 1

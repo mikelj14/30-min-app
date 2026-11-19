@@ -106,6 +106,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         // ponytail: fixed duration for device tests; settings UI is Phase 5.
-        const val PROTOTYPE_MINUTES = 1
+        const val PROTOTYPE_MINUTES = 3
     }
 }
