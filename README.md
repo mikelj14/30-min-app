@@ -1,3 +1,5 @@
+<img src="art/logo.svg" width="96" alt="30-Min logo: a half-filled countdown ring around a rising sun">
+
 # 30-Min
 
 [![CI](https://github.com/mikelj14/30-min-app/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelj14/30-min-app/actions/workflows/ci.yml)
