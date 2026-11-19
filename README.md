@@ -44,4 +44,5 @@ Installing to a phone still runs on the host (the container has no adb).
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
-secret scan (gitleaks), Gradle wrapper validation, ktlint, unit tests, debug build.
+secret scan (gitleaks), Gradle wrapper validation, ktlint, Android Lint, unit tests,
+debug build and release build (R8 shrinking).
