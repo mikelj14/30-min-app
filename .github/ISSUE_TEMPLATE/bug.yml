@@ -1,0 +1,51 @@
+name: Something went wrong
+description: The block did not start, did not end, crashed, or behaved oddly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing 30-Min. Issues are public: please leave out your name, phone number and anything personal.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      placeholder: "This morning I unlocked at 7:10 and no block appeared."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "A 30 minute block after my first unlock."
+  - type: input
+    id: when
+    attributes:
+      label: When did it happen?
+      description: Date and time, roughly. Helps match it with the phone's logs.
+      placeholder: "20 Nov, about 7:10"
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Bottom of the Settings tab in 30-Min.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone model and Android version
+      description: "Phone Settings > About phone."
+      placeholder: "Samsung Galaxy S25, Android 16"
+    validations:
+      required: true
+  - type: checkboxes
+    id: setup
+    attributes:
+      label: Phone setup
+      description: Phone makers often stop background apps overnight, which skips the morning block.
+      options:
+        - label: "30-Min Settings > Phone setup says \"All permissions ready\""
+        - label: "Battery for 30-Min is set to Unrestricted"
+        - label: "Samsung only: 30-Min is in Never sleeping apps, and Power saving / Sleep mode do not pause it"

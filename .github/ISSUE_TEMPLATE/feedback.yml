@@ -1,0 +1,20 @@
+name: Feedback or idea
+description: What you liked, what annoyed you, what you would change.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Issues are public, so keep personal details out.
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+      placeholder: "After a week: the exit is too easy / the tutorial was clear / I want weekends off..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Bottom of the Settings tab in 30-Min.
+      placeholder: "0.2.1"

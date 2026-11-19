@@ -6,6 +6,17 @@ Android app that blocks phone use for the first N minutes after you wake up.
 
 Status: testing with friends before a Play Store release.
 
+## Testing the app (friends)
+
+1. On your Android phone (Android 12+), open the
+   [latest release](https://github.com/mikelj14/30-min-app/releases) and download the `.apk`.
+2. Open it. Android asks to allow installs from your browser: allow it once.
+3. Open 30-Min and follow the setup checklist and the short tutorial.
+4. To update, install the newer `.apk` the same way. Your history stays.
+
+Something wrong or an idea? [Open an issue](https://github.com/mikelj14/30-min-app/issues/new/choose).
+The app version is at the bottom of its Settings tab.
+
 ## Requirements
 
 - JDK 17
