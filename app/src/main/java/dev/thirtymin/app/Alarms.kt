@@ -62,13 +62,19 @@ object Alarms {
         return true
     }
 
-    /** Debug builds only: a window that opens in 1 minute and lasts 3 (short, to test the timeout). */
+    /**
+     * Debug builds only: a window that opens in 1 minute and lasts 7, with a
+     * 5-minute block: the shortest block that is recorded in history.
+     */
     fun scheduleDebug(context: Context): Boolean {
         val at = ZonedDateTime.now().plusMinutes(1).withNano(0)
         val start = at.toLocalTime()
-        // Clamp instead of wrapping past midnight (Schedule needs start < end).
-        val end = start.plusMinutes(3).let { if (it > start) it else LocalTime.MAX }
-        return set(context, ACTION_DEBUG, Schedule(start, end, 1), at)
+        // Clamp instead of wrapping past midnight (Schedule needs start < end);
+        // too close to midnight for a 5-minute block = refuse, not crash.
+        val end = start.plusMinutes(7).let { if (it > start) it else LocalTime.MAX }
+        val s =
+            runCatching { Schedule(start, end, BLOCK_MINUTES.first) }.getOrNull() ?: return false
+        return set(context, ACTION_DEBUG, s, at)
     }
 
     /** Returns false (fail open, no auto block) when exact alarms are not allowed. */

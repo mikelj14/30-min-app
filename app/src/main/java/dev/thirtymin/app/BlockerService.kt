@@ -56,6 +56,11 @@ class BlockerService : Service() {
     private var phoneApps = emptySet<String>()
     private var timer: CountDownTimer? = null
 
+    // History (Room). Day fixed at block start, so a midnight or zone change
+    // mid-block still closes the right row. endedAs null at destroy = SYSTEM.
+    private var historyDay: LocalDate? = null
+    private var endedAs: Outcome? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     // Set while armed: the window we are waiting in, and the screen/unlock listener.
@@ -76,6 +81,7 @@ class BlockerService : Service() {
         mainExecutor.execute {
             if (!Settings.canDrawOverlays(this)) {
                 Log.i(TAG, "overlay permission revoked")
+                if (overlay != null) endedAs = Outcome.QUIT // user turned the block off
                 stopSelf()
             }
         }
@@ -201,10 +207,16 @@ class BlockerService : Service() {
         // Persist first, synchronously: once the overlay is up, today is already on
         // disk, so a crash or kill cannot lead to a second block today. If the
         // overlay then fails, today is spent with no block (fail open).
-        SessionStore(this).startBlock(
-            LocalDate.now(),
-            SystemClock.elapsedRealtime() + minutes * 60_000L
-        )
+        val today = LocalDate.now()
+        SessionStore(this).startBlock(today, SystemClock.elapsedRealtime() + minutes * 60_000L)
+        // Automatic blocks only (schedule set while armed); the manual prototype
+        // block is not a morning, and blocks shorter than a user could pick
+        // (debug tests) stay out of history. Async: never delays the overlay below.
+        if (schedule != null && minutes >= BLOCK_MINUTES.first) {
+            historyDay = today
+            val row = SessionRecord(today.toEpochDay(), System.currentTimeMillis(), minutes)
+            HistoryDb.record(this) { start(row) }
+        }
         try {
             showOverlay(minutes * 60_000L)
         } catch (e: RuntimeException) {
@@ -238,7 +250,12 @@ class BlockerService : Service() {
                 addView(
                     Button(context).apply {
                         text = "Yes"
-                    }.also { it.setOnClickListener { stopSelf() } }
+                    }.also {
+                        it.setOnClickListener {
+                            endedAs = Outcome.QUIT
+                            stopSelf()
+                        }
+                    }
                 )
                 addView(
                     Button(context).apply { text = "No" }.also {
@@ -340,7 +357,10 @@ class BlockerService : Service() {
                     countdown.text = "%d:%02d".format(s / 60, s % 60)
                 }
 
-                override fun onFinish() = stopSelf()
+                override fun onFinish() {
+                    endedAs = Outcome.COMPLETED
+                    stopSelf()
+                }
             }.start()
     }
 
@@ -435,6 +455,13 @@ class BlockerService : Service() {
         }
         overlay = null
         SessionStore(this).endBlock()
+        // Last, after all cleanup; queued off the main thread and cannot throw here.
+        val day = historyDay
+        val outcome = endedAs
+        if (day != null && outcome != null) {
+            val at = System.currentTimeMillis()
+            HistoryDb.record(this) { finish(day.toEpochDay(), outcome, at) }
+        }
         super.onDestroy()
     }
 

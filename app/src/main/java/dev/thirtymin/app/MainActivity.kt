@@ -35,14 +35,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
 import java.time.LocalTime
 
 class MainActivity : ComponentActivity() {
@@ -95,10 +98,18 @@ class MainActivity : ComponentActivity() {
 
                                 tab == Tab.TODAY -> Today()
 
-                                tab == Tab.HISTORY -> Placeholder(
-                                    "History",
-                                    "Your completed mornings will show here."
-                                )
+                                tab == Tab.HISTORY -> {
+                                    // Room runs the query off the main thread; the Flow
+                                    // re-emits when a block writes a row.
+                                    val history =
+                                        remember {
+                                            HistoryDb.get(this@MainActivity).sessions().outcomes()
+                                        }
+                                    val days by history.collectAsState(emptyMap())
+                                    // ponytail: "today" read on recomposition; a screen left open past midnight
+                                    // shows yesterday as today until it redraws.
+                                    HistoryScreen(days, LocalDate.now())
+                                }
 
                                 else -> SettingsScreen(
                                     schedule,
@@ -127,7 +138,8 @@ class MainActivity : ComponentActivity() {
     private fun readPermissions() {
         canOverlay = Settings.canDrawOverlays(this)
         canAlarm = getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
-        canNotify =
+        // Runtime permission only since Android 13; before that notifications are on by default.
+        canNotify = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         batteryFree =
@@ -198,7 +210,16 @@ class MainActivity : ComponentActivity() {
         try {
             startActivity(specific)
         } catch (e: ActivityNotFoundException) {
-            startActivity(Intent(action))
+            try {
+                startActivity(Intent(action))
+            } catch (e: ActivityNotFoundException) {
+                // Some vendor builds remove settings pages: tell, do not crash.
+                Toast.makeText(
+                    this,
+                    "Open this in your phone's Settings app",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -211,7 +232,8 @@ class MainActivity : ComponentActivity() {
         ) {
             Text("30-Min", style = MaterialTheme.typography.titleMedium)
             if (alarmWasLost) LostAlarmCard { showSetup = true }
-            if (canOverlay) {
+            // Manual block is a test tool, not a morning (phase 5.5): debug builds only.
+            if (canOverlay && BuildConfig.DEBUG) {
                 Button(onClick = ::startBlock) { Text("Block for $PROTOTYPE_MINUTES min") }
             }
             if (canAlarm && BuildConfig.DEBUG) {
@@ -284,17 +306,6 @@ private fun NavBar(current: Tab, onSelect: (Tab) -> Unit) {
                     )
             )
         }
-    }
-}
-
-@Composable
-private fun Placeholder(title: String, body: String) {
-    Column(
-        Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium)
-        Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
