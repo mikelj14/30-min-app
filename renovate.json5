@@ -1,0 +1,73 @@
+// Renovate: opens PRs that update dependencies. Each PR runs the normal CI and
+// must pass the `main` ruleset (required checks) before it can be merged.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  extends: [
+    // Renovate's maintained defaults: Dependency Dashboard, monorepo grouping
+    // (e.g. all androidx.room artifacts move together), conventional commit
+    // prefixes ("chore(deps): ..."), at most 2 new PRs per hour.
+    'config:recommended',
+    // Any GitHub Action referenced by tag gets pinned to its commit SHA; the
+    // tag stays as a comment. Already-pinned actions get SHA + comment bumped.
+    'helpers:pinGitHubActionDigests',
+  ],
+
+  // One batch a week instead of PRs trickling in daily. Cron is in UTC.
+  schedule: ['* 0-3 * * 1'], // Monday 00:00-03:59 UTC
+
+  // Issue that lists every pending, open and rate-limited update; tick a box
+  // there to get a PR outside the schedule.
+  dependencyDashboard: true,
+
+  // A human merges every update for now (no automerge until CI is trusted).
+  automerge: false,
+
+  // Never move to alpha/beta/RC/snapshot versions. If we pin one on purpose,
+  // Renovate only proposes newer prereleases of that same line.
+  ignoreUnstable: true,
+
+  // Supply chain: wait before proposing a fresh release. Hijacked or broken
+  // versions are usually yanked within days of publishing.
+  minimumReleaseAge: '3 days',
+
+  // Major updates get their own PR, never mixed into a group's minor/patch PR.
+  separateMajorMinor: true,
+
+  labels: ['dependencies'],
+
+  packageRules: [
+    {
+      // All workflow actions in one PR, still SHA-pinned.
+      groupName: 'GitHub Actions',
+      matchManagers: ['github-actions'],
+    },
+    {
+      // Kotlin compiler plugin + KSP must stay compatible: test them together.
+      groupName: 'Kotlin and KSP',
+      matchPackageNames: ['/^org\\.jetbrains\\.kotlin/', '/^com\\.google\\.devtools\\.ksp/'],
+    },
+    {
+      // AGP has a minimum Gradle version, so the plugin and the wrapper move together.
+      groupName: 'Android Gradle Plugin and Gradle',
+      matchPackageNames: ['/^com\\.android\\.application/', '/^com\\.android\\.tools\\.build/'],
+    },
+    {
+      groupName: 'Android Gradle Plugin and Gradle',
+      matchManagers: ['gradle-wrapper'],
+    },
+    {
+      // Dev Container JDK image: keep the `17-jdk-noble` tag, only refresh its
+      // pinned digest (security patches). The JDK major is chosen together
+      // with CI's setup-java (java-version: 17), which Renovate cannot see.
+      matchPackageNames: ['eclipse-temurin'],
+      matchUpdateTypes: ['major', 'minor', 'patch'],
+      enabled: false,
+    },
+    {
+      // AndroidX libraries (Compose BOM, Room, activity, core, test).
+      groupName: 'AndroidX',
+      matchPackageNames: ['/^androidx\\./'],
+    },
+  ],
+}
