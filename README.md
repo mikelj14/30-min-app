@@ -4,7 +4,7 @@
 
 Android app that blocks phone use for the first N minutes after you wake up.
 
-Status: early development. See `docs/feasibility.md` for the approach.
+Status: testing with friends before a Play Store release.
 
 ## Requirements
 

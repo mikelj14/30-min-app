@@ -20,3 +20,6 @@ play-service-account.json
 
 # JVM crash heap dumps
 *.hprof
+
+# Private working notes, never published
+docs/

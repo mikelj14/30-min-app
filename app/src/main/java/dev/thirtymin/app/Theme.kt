@@ -15,7 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Design reference: docs/design/30-Min.dc.html (style sheet section).
+// Design reference: the 30-Min style sheet (calm dark theme, amber + green).
 // Always dark. Amber = actions (at most once or twice per screen), green = success only.
 private val Colors =
     darkColorScheme(
@@ -47,7 +47,7 @@ private val Colors =
         outlineVariant = Color(0xFF2F2B25)
     )
 
-// One variable font file (res/font/manrope.ttf, OFL), one Font entry per weight used.
+// One variable font file (res/font/manrope.ttf, OFL: licenses/Manrope-OFL.txt), one Font entry per weight used.
 private val Manrope =
     FontFamily(
         listOf(200, 300, 400, 500, 600, 700, 800).map { w ->
