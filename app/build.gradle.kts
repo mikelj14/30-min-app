@@ -18,7 +18,9 @@ val appVersionCode: Int =
             Regex("""(\d+)\.(\d+)\.(\d+)""").matchEntire(appVersion)
                 ?.groupValues?.drop(1)?.map { it.toInt() }
                 ?.takeIf { it[1] < 100 && it[2] < 100 }
-                ?: error("appVersion must be MAJOR.MINOR.PATCH, minor and patch < 100: '$appVersion'")
+                ?: error(
+                    "appVersion must be MAJOR.MINOR.PATCH, minor and patch < 100: '$appVersion'"
+                )
         n[0] * 10_000 + n[1] * 100 + n[2]
     }
 
