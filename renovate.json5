@@ -57,6 +57,14 @@
       matchManagers: ['gradle-wrapper'],
     },
     {
+      // Dev Container JDK image: keep the `17-jdk-noble` tag, only refresh its
+      // pinned digest (security patches). The JDK major is chosen together
+      // with CI's setup-java (java-version: 17), which Renovate cannot see.
+      matchPackageNames: ['eclipse-temurin'],
+      matchUpdateTypes: ['major', 'minor', 'patch'],
+      enabled: false,
+    },
+    {
       // AndroidX libraries (Compose BOM, Room, activity, core, test).
       groupName: 'AndroidX',
       matchPackageNames: ['/^androidx\\./'],
