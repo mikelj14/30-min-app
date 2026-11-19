@@ -2,6 +2,7 @@ package dev.thirtymin.app
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -47,7 +49,12 @@ import kotlin.math.roundToInt
 // Opt-in: custom Slider thumb/track slots are still experimental in Material 3.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(saved: Schedule, onSave: (LocalTime, LocalTime, Int) -> String?) {
+fun SettingsScreen(
+    saved: Schedule,
+    onSave: (LocalTime, LocalTime, Int) -> String?,
+    setupSummary: String,
+    onOpenSetup: () -> Unit
+) {
     var start by remember(saved) { mutableStateOf(saved.start) }
     var end by remember(saved) { mutableStateOf(saved.end) }
     var minutes by remember(saved) { mutableFloatStateOf(saved.minutes.toFloat()) }
@@ -137,19 +144,48 @@ fun SettingsScreen(saved: Schedule, onSave: (LocalTime, LocalTime, Int) -> Strin
 
         Section("This phone") {
             Card {
-                Row(
-                    Modifier.padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_lock),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Column {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenSetup)
+                            .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_smartphone),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("Phone setup", style = MaterialTheme.typography.titleSmall)
+                            Hint(setupSummary, inset = 0.dp)
+                        }
+                        Icon(
+                            painterResource(R.drawable.ic_chevron_right),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 20.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
                     )
-                    Column {
-                        Text("Private by design", style = MaterialTheme.typography.titleSmall)
-                        Hint("No account. Your mornings never leave this phone.", inset = 0.dp)
+                    Row(
+                        Modifier.padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_lock),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Column {
+                            Text("Private by design", style = MaterialTheme.typography.titleSmall)
+                            Hint("No account. Your mornings never leave this phone.", inset = 0.dp)
+                        }
                     }
                 }
             }

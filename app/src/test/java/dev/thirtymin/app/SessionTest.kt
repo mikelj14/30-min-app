@@ -129,4 +129,13 @@ class SessionTest {
         assertEquals(false, passReturns(false, null, dialer, 1_000, 30_000))
         assertEquals(true, passReturns(false, null, dialer, 30_000, 30_000))
     }
+
+    @Test fun alarmLostOnlyAfterForceStop() {
+        assertEquals(true, alarmLost(true, setBoot = 61, boot = 61, pending = false))
+        assertEquals(false, alarmLost(true, setBoot = 61, boot = 61, pending = true))
+        assertEquals(false, alarmLost(true, setBoot = 61, boot = 62, pending = false)) // reboot
+        // First run, then no permission:
+        assertEquals(false, alarmLost(true, setBoot = null, boot = 61, pending = false))
+        assertEquals(false, alarmLost(false, setBoot = 61, boot = 61, pending = false))
+    }
 }

@@ -104,3 +104,12 @@ fun passReturns(
     front != null && front !in phoneApps -> true
     else -> nowElapsed >= endsAt
 }
+
+/**
+ * About to set the daily alarm: was the previous one lost to a force-stop?
+ * Missing alarm + same boot it was set in = force-stopped (a reboot also wipes
+ * alarms, but changes the boot count). Never on first run ([setBoot] null) or
+ * without the permission (the checklist shows that).
+ */
+fun alarmLost(canSchedule: Boolean, setBoot: Int?, boot: Int, pending: Boolean): Boolean =
+    canSchedule && setBoot == boot && !pending

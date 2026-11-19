@@ -54,16 +54,34 @@ class SessionStore(context: Context) {
     /** True while a block runs (same test as [phase] ACTIVE). */
     fun blockRunning(): Boolean = activeUntil?.let { SystemClock.elapsedRealtime() < it } == true
 
+    /** Boot the daily alarm was last set in, or null if never set (first run). */
+    val alarmSetBoot: Int? get() = prefs.getInt(KEY_ALARM_BOOT, -1).takeIf { it >= 0 }
+
+    fun markAlarmSet() {
+        if (alarmSetBoot != bootCount()) prefs.edit { putInt(KEY_ALARM_BOOT, bootCount()) }
+    }
+
+    /** Set when a force-stop deleted the alarm; the app shows a warning once. */
+    fun noteAlarmLost() = prefs.edit { putBoolean(KEY_ALARM_LOST, true) }
+
+    fun takeAlarmLost(): Boolean {
+        val lost = prefs.getBoolean(KEY_ALARM_LOST, false)
+        if (lost) prefs.edit { remove(KEY_ALARM_LOST) }
+        return lost
+    }
+
     fun saveSchedule(s: Schedule) = prefs.edit(commit = true) {
         putInt(KEY_START, s.start.toSecondOfDay())
         putInt(KEY_END, s.end.toSecondOfDay())
         putInt(KEY_MINUTES, s.minutes)
     }
 
-    private fun bootCount() = Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT, 0)
+    fun bootCount() = Settings.Global.getInt(resolver, Settings.Global.BOOT_COUNT, 0)
 
     companion object {
         val DEFAULT_SCHEDULE = Schedule(LocalTime.of(6, 0), LocalTime.of(10, 0), 30)
+        private const val KEY_ALARM_BOOT = "alarm_set_boot"
+        private const val KEY_ALARM_LOST = "alarm_lost"
         private const val KEY_START = "window_start_sec"
         private const val KEY_END = "window_end_sec"
         private const val KEY_MINUTES = "block_minutes"

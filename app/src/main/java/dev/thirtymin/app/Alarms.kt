@@ -22,9 +22,32 @@ object Alarms {
     private const val TAG = "Alarms"
 
     fun scheduleDaily(context: Context): Boolean {
-        val s = SessionStore(context).schedule
-        return set(context, ACTION_DAILY, s, nextAlarmAt(ZonedDateTime.now(), s))
+        val store = SessionStore(context)
+        // Check before re-setting. Every path lands here, including the
+        // BOOT_COMPLETED that Android 15+ sends when a force-stopped app restarts.
+        val canSet = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+        if (alarmLost(canSet, store.alarmSetBoot, store.bootCount(), dailyPending(context))) {
+            Log.w(TAG, "daily alarm was lost (force-stop?)")
+            store.noteAlarmLost()
+        }
+        val s = store.schedule
+        val ok = set(context, ACTION_DAILY, s, nextAlarmAt(ZonedDateTime.now(), s))
+        if (ok) store.markAlarmSet()
+        return ok
     }
+
+    /**
+     * Is the daily alarm still registered? A force-stop (Samsung power saving,
+     * Sleep mode, or Settings) cancels every PendingIntent of the app, so this
+     * turns false. ponytail: also true for a fired-but-not-rescheduled alarm;
+     * fine, AlarmReceiver reschedules before anything else.
+     */
+    fun dailyPending(context: Context): Boolean = PendingIntent.getBroadcast(
+        context,
+        0,
+        Intent(context, AlarmReceiver::class.java).setAction(ACTION_DAILY),
+        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+    ) != null
 
     /**
      * Save new settings and move the daily alarm. Refused (false) during a
