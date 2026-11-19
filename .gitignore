@@ -13,6 +13,8 @@ local.properties
 # Signing material and publishing credentials (never commit)
 *.jks
 *.keystore
+*.p12
+*.pfx
 play-service-account.json
 
 # OS
@@ -21,5 +23,6 @@ play-service-account.json
 # JVM crash heap dumps
 *.hprof
 
-# Private working notes, never published
-docs/
+# Built app packages (release workflow copies the APK to the repo root)
+*.apk
+*.aab
