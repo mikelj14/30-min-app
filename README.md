@@ -11,9 +11,12 @@ Status: testing with friends before a Play Store release.
 ## Testing the app (friends)
 
 1. On your Android phone (Android 12+), open the
-   [latest release](https://github.com/mikelj14/30-min-app/releases) and download the `.apk`.
+   [latest release](https://github.com/mikelj14/30-min-app/releases/latest) and download the `.apk`.
 2. Open it. Android asks to allow installs from your browser: allow it once.
 3. Open 30-Min and follow the setup checklist and the short tutorial.
+   If a permission switch is greyed out ("restricted setting"): open phone
+   Settings › Apps › 30-Min, tap ⋮ (top right), choose **Allow restricted
+   settings**, then try again. Android does this for apps installed from a file.
 4. To update, install the newer `.apk` the same way. Your history stays.
 
 Something wrong or an idea? [Open an issue](https://github.com/mikelj14/30-min-app/issues/new/choose).
@@ -72,5 +75,5 @@ git tag v0.2.0 && git push origin v0.2.0
 It checks the tag is on `main`, runs the checks, builds a release APK signed
 with the key from GitHub secrets (`RELEASE_KEYSTORE_BASE64`,
 `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`), and publishes a GitHub
-Release with the APK and its sha256. Tag `vX.Y.Z` gives versionCode
+Release (marked Latest) with the APK and its sha256. Tag `vX.Y.Z` gives versionCode
 `X*10000 + Y*100 + Z`; tags must only go up.

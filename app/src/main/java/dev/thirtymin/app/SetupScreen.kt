@@ -83,6 +83,17 @@ fun SetupScreen(perms: List<Permission>, samsung: Boolean, onDone: () -> Unit) {
         ) {
             Column(Modifier.padding(vertical = 4.dp)) { perms.forEach { Row(it) } }
         }
+        // Android 13+ locks some settings for apps installed from a downloaded
+        // APK ("restricted settings") until the user unlocks them in App info.
+        if (!perms.all { it.granted }) {
+            Text(
+                "Switch greyed out? Open Settings › Apps › 30-Min, tap ⋮, choose " +
+                    "Allow restricted settings, then try again.",
+                Modifier.padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (samsung) SamsungCard()
         Button(
             onClick = onDone,
