@@ -181,6 +181,8 @@ fun SettingsScreen(
                 }
             }
         }
+        // Friends quote this in bug reports (GitHub issue form asks for it).
+        Hint("Version ${BuildConfig.VERSION_NAME}")
     }
 
     picking?.let { which ->
