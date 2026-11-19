@@ -20,6 +20,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -307,12 +308,22 @@ private fun TimeDialog(
     onPick: (LocalTime) -> Unit
 ) {
     val state = rememberTimePickerState(initial.hour, initial.minute, is24h)
+    // The dial is quick for rough times but hard to hit an exact minute on;
+    // typing is exact. Same state, so switching keeps the chosen time.
+    var typing by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = { onPick(LocalTime.of(state.hour, state.minute)) }) { Text("OK") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        text = { TimePicker(state) }
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (typing) TimeInput(state) else TimePicker(state)
+                TextButton(onClick = { typing = !typing }, Modifier.align(Alignment.Start)) {
+                    Text(if (typing) "Use dial" else "Type time")
+                }
+            }
+        }
     )
 }
