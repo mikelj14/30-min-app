@@ -65,6 +65,14 @@
       enabled: false,
     },
     {
+      // Same JDK major in CI: setup-java's java-version (dep "java-jdk").
+      // Moved by hand together with the Dev Container image, never alone,
+      // so laptop and CI always build with the same JDK.
+      matchDepNames: ['java-jdk'],
+      matchUpdateTypes: ['major'],
+      enabled: false,
+    },
+    {
       // AndroidX libraries (Compose BOM, Room, activity, core, test).
       groupName: 'AndroidX',
       matchPackageNames: ['/^androidx\\./'],
