@@ -18,7 +18,9 @@
 
   // Issue that lists every pending, open and rate-limited update; tick a box
   // there to get a PR outside the schedule.
-  dependencyDashboard: true,
+  dependencyDashboard: {
+    enabled: true,
+  },
 
   // A human merges every update for now (no automerge until CI is trusted).
   automerge: false,
