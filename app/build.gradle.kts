@@ -59,6 +59,8 @@ android {
         release {
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            // Drops resources no code references (after R8 removed the code).
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }

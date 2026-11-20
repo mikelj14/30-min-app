@@ -38,7 +38,8 @@ class SessionStore(context: Context) {
         putInt(KEY_BOOT, bootCount())
     }
 
-    fun endBlock() = prefs.edit { remove(KEY_ACTIVE_UNTIL) }
+    /** commit: a kill right after an early exit must not leave the block "running" on disk. */
+    fun endBlock() = prefs.edit(commit = true) { remove(KEY_ACTIVE_UNTIL) }
 
     /** Saved settings, or [DEFAULT_SCHEDULE] if never saved or unreadable (fail safe, not crash). */
     val schedule: Schedule

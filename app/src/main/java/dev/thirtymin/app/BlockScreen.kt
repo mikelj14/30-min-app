@@ -304,13 +304,15 @@ fun CountdownRing(
     animate: Boolean = true
 ) {
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
-    val smooth by animateFloatAsState(
+    val smooth = animateFloatAsState(
         fraction.coerceIn(0f, 1f),
         tween(1_000, easing = LinearEasing),
         label = "ring"
     )
-    val p = if (animate) smooth else fraction
     Canvas(Modifier.size(size)) {
+        // Read inside the draw lambda: each animation frame only redraws the
+        // canvas instead of recomposing this function.
+        val p = if (animate) smooth.value else fraction
         val stroke = Stroke(4.dp.toPx(), cap = StrokeCap.Round)
         drawCircle(
             track,
