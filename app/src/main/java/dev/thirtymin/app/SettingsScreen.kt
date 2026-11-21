@@ -4,28 +4,35 @@ import android.text.format.DateFormat
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,10 +43,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -186,7 +196,8 @@ fun SettingsScreen(
     }
 
     picking?.let { which ->
-        TimeDialog(
+        TimeSheet(
+            title = if (which == Picking.START) "Window opens" else "Window closes",
             initial = if (which == Picking.START) start else end,
             is24h = is24h,
             onDismiss = { picking = null },
@@ -301,31 +312,120 @@ private fun SmallLabel(text: String, modifier: Modifier = Modifier) = Text(
     color = MaterialTheme.colorScheme.outline
 )
 
+/**
+ * Bottom sheet with hour and minute wheels. Minutes move in 5-minute steps:
+ * a wake window never needs more, and big targets beat an exact dial.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimeDialog(
+private fun TimeSheet(
+    title: String,
     initial: LocalTime,
     is24h: Boolean,
     onDismiss: () -> Unit,
     onPick: (LocalTime) -> Unit
 ) {
-    val state = rememberTimePickerState(initial.hour, initial.minute, is24h)
-    // The dial is quick for rough times but hard to hit an exact minute on;
-    // typing is exact. Same state, so switching keeps the chosen time.
-    var typing by remember { mutableStateOf(false) }
-    AlertDialog(
+    var hour by remember { mutableIntStateOf(initial.hour) }
+    var step by remember { mutableIntStateOf(initial.minute / 5) }
+    val picked = LocalTime.of(hour, step * 5)
+    val hourFormat = DateTimeFormatter.ofPattern(if (is24h) "HH" else "h a")
+    val fullFormat = DateTimeFormatter.ofPattern(if (is24h) "H:mm" else "h:mm a")
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = { onPick(LocalTime.of(state.hour, state.minute)) }) { Text("OK") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (typing) TimeInput(state) else TimePicker(state)
-                TextButton(onClick = { typing = !typing }, Modifier.align(Alignment.Start)) {
-                    Text(if (typing) "Use dial" else "Type time")
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(
+            Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Box(contentAlignment = Alignment.Center) {
+                // Selection band behind the middle row of both wheels.
+                Surface(
+                    Modifier.fillMaxWidth().height(WHEEL_ROW),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                ) {}
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Wheel(24, initial.hour, {
+                        LocalTime.of(it, 0).format(hourFormat)
+                    }, "Hour", Modifier.weight(1f)) {
+                        hour = it
+                    }
+                    Text(":", style = MaterialTheme.typography.headlineLarge)
+                    Wheel(12, initial.minute / 5, {
+                        "%02d".format(it * 5)
+                    }, "Minute", Modifier.weight(1f)) {
+                        step = it
+                    }
                 }
             }
+            Button(
+                onClick = { onPick(picked) },
+                Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text(
+                    "Set ${picked.format(fullFormat)}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
-    )
+    }
+}
+
+private val WHEEL_ROW = 56.dp
+
+/** Snapping vertical list; the row in the middle is the value. */
+@Composable
+private fun Wheel(
+    count: Int,
+    initial: Int,
+    label: (Int) -> String,
+    name: String,
+    modifier: Modifier,
+    onSelect: (Int) -> Unit
+) {
+    val state = rememberLazyListState(initial)
+    val selected by remember {
+        derivedStateOf {
+            val info = state.layoutInfo
+            val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            info.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2 - mid) }?.index
+                ?: initial
+        }
+    }
+    LaunchedEffect(selected) { onSelect(selected) }
+    LazyColumn(
+        modifier.height(WHEEL_ROW * 5).semantics {
+            contentDescription = "$name, ${label(selected)}"
+        },
+        state = state,
+        contentPadding = PaddingValues(vertical = WHEEL_ROW * 2),
+        flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        items(count) { i ->
+            val distance = abs(i - selected)
+            Box(Modifier.height(WHEEL_ROW).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    label(i),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = if (distance == 0) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(
+                            alpha = if (distance ==
+                                1
+                            ) {
+                                1f
+                            } else {
+                                0.45f
+                            }
+                        )
+                    }
+                )
+            }
+        }
+    }
 }
