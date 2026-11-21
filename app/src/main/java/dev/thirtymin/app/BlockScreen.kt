@@ -1,6 +1,7 @@
 package dev.thirtymin.app
 
-import android.view.View
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -31,9 +32,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +50,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,12 +60,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Compose needs a lifecycle and a saved-state registry from the view tree.
@@ -74,15 +80,40 @@ class OverlayOwner : SavedStateRegistryOwner {
     override val lifecycle: Lifecycle get() = registry
     override val savedStateRegistry: SavedStateRegistry get() = saved.savedStateRegistry
 
-    fun attach(view: View) {
+    fun attach(view: AbstractComposeView) {
         saved.performRestore(null)
         registry.currentState = Lifecycle.State.RESUMED
         view.setViewTreeLifecycleOwner(this)
         view.setViewTreeSavedStateRegistryOwner(this)
+        view.setParentCompositionContext(ownFrameRecomposer())
+    }
+
+    /**
+     * Samsung (One UI, log tag BBA2) stops Choreographer frame callbacks for a
+     * process it marks background: once MainActivity was shown and left, an
+     * overlay added later in the same process froze until a touch or screen
+     * off/on. Compose waits for those callbacks, so the countdown stopped.
+     * View traversals still run, so drive composition and animations with our
+     * own clock: a frame ~16 ms after anything awaits one, nothing while idle.
+     */
+    private fun ownFrameRecomposer(): Recomposer {
+        val main = Handler(Looper.getMainLooper())
+        lateinit var clock: BroadcastFrameClock
+        clock = BroadcastFrameClock {
+            main.postDelayed({ clock.sendFrame(System.nanoTime()) }, FRAME_MS)
+        }
+        val context = lifecycleScope.coroutineContext + clock
+        val recomposer = Recomposer(context)
+        lifecycleScope.launch(clock) { recomposer.runRecomposeAndApplyChanges() }
+        return recomposer
     }
 
     fun destroy() {
         registry.currentState = Lifecycle.State.DESTROYED
+    }
+
+    private companion object {
+        const val FRAME_MS = 16L
     }
 }
 
